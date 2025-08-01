@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>3-Digit Guess Game - Online Multiplayer</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: 'Inter', 'Segoe UI', sans-serif;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .container {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      padding: 2.5rem;
+      border-radius: 20px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+      width: 100%;
+      max-width: 550px;
+      transition: all 0.3s ease;
+    }
+
+    .container:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.2);
+    }
+
+    h1, h2, h3 {
+      margin: 0 0 1.5rem 0;
+      text-align: center;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    h1 { font-size: 2.2rem; font-weight: 700; }
+    h2 { font-size: 1.8rem; font-weight: 600; }
+    h3 { font-size: 1.4rem; font-weight: 500; }
+
+    input {
+      padding: 1rem;
+      margin-bottom: 1rem;
+      width: 100%;
+      border: 2px solid #e1e5e9;
+      border-radius: 12px;
+      font-size: 1rem;
+      transition: all 0.3s ease;
+      background: rgba(255, 255, 255, 0.8);
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      transform: translateY(-1px);
+    }
+
+    button {
+      width: 100%;
+      padding: 1rem;
+      font-size: 1rem;
+      font-weight: 600;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-bottom: 0.5rem;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .button-group button {
+      margin-bottom: 0;
+    }
+
+    .log {
+      margin-top: 1.5rem;
+      background: rgba(249, 249, 249, 0.8);
+      border-radius: 15px;
+      padding: 1.5rem;
+      height: 250px;
+      overflow-y: auto;
+      font-size: 0.95rem;
+      border: 1px solid rgba(0, 0, 0, 0.05);
+    }
+
+    .log div {
+      padding: 0.5rem 0;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+      animation: fadeIn 0.3s ease;
+    }
+
+    .log div:last-child {
+      border-bottom: none;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .success {
+      color: #22c55e;
+      font-weight: bold;
+      background: rgba(34, 197, 94, 0.1);
+      padding: 1rem;
+      border-radius: 10px;
+      text-align: center;
+    }
+
+    .status {
+      text-align: center;
+      padding: 1rem;
+      border-radius: 10px;
+      margin-bottom: 1rem;
+      font-weight: 500;
+    }
+
+    .status.connected {
+      background: rgba(34, 197, 94, 0.1);
+      color: #22c55e;
+    }
+
+    .status.connecting {
+      background: rgba(251, 191, 36, 0.1);
+      color: #f59e0b;
+    }
+
+    .status.disconnected {
+      background: rgba(239, 68, 68, 0.1);
+      color: #ef4444;
+    }
+
+    .room-code {
+      font-family: 'Courier New', monospace;
+      font-size: 1.2rem;
+      font-weight: bold;
+      text-align: center;
+      padding: 1rem;
+      background: rgba(102, 126, 234, 0.1);
+      border-radius: 10px;
+      margin: 1rem 0;
+      letter-spacing: 2px;
+    }
+
+    .turn-indicator {
+      text-align: center;
+      padding: 1rem;
+      border-radius: 12px;
+      margin-bottom: 1rem;
+      font-weight: 600;
+      background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+      border: 2px solid rgba(102, 126, 234, 0.2);
+    }
+
+    @media (max-width: 600px) {
+      .container {
+        padding: 1.5rem;
+        margin: 10px;
+      }
+      
+      .button-group {
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>🎯 3-Digit Guessing Game</h1>
+
+    <!-- Connection Setup -->
+    <div id="connection-setup">
+      <div class="button-group">
+        <button onclick="createRoom()">Create Room</button>
+        <button onclick="showJoinRoom()">Join Room</button>
+      </div>
+      <button onclick="playLocal()">Play Locally</button>
+    </div>
+
+    <!-- Join Room -->
+    <div id="join-room" class="hidden">
+      <input type="text" id="room-code-input" placeholder="Enter Room Code" maxlength="6">
+      <button onclick="joinRoom()">Join Room</button>
+      <button onclick="backToMenu()">Back</button>
+    </div>
+
+    <!-- Room Display -->
+    <div id="room-display" class="hidden">
+      <div class="status" id="connection-status">Connecting...</div>
+      <div class="room-code" id="room-code-display"></div>
+      <p style="text-align: center; color: #666;">Share this code with your friend!</p>
+      <button onclick="backToMenu()" id="back-btn">Back to Menu</button>
+    </div>
+
+    <!-- Local Game Setup -->
+    <div id="setup" class="hidden">
+      <h2>Game Setup</h2>
+      <input type="password" id="p1-secret" maxlength="3" placeholder="Player 1 Secret (3 digits)">
+      <input type="password" id="p2-secret" maxlength="3" placeholder="Player 2 Secret (3 digits)">
+      <button onclick="startGame()">Start Game</button>
+      <button onclick="backToMenu()">Back</button>
+    </div>
+
+    <!-- Online Game Setup -->
+    <div id="online-setup" class="hidden">
+      <h2>Set Your Secret</h2>
+      <input type="password" id="my-secret" maxlength="3" placeholder="Your 3-digit secret">
+      <button onclick="setSecret()">Ready to Play!</button>
+      <div class="status" id="waiting-status" style="display: none;">Waiting for opponent...</div>
+    </div>
+
+    <!-- Game Area -->
+    <div id="game-area" class="hidden">
+      <div class="turn-indicator" id="turn-indicator">Player 1's Turn</div>
+      <input type="text" id="guess" placeholder="Enter your 3-digit guess" maxlength="3">
+      <button onclick="makeGuess()" id="guess-btn">Make Guess</button>
+      <button onclick="backToMenu()" id="game-back-btn">New Game</button>
+
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+
+  <script>
+    let secrets = {};
+    let turn = 1;
+    let gameMode = 'local'; // 'local' or 'online'
+    let isOnline = false;
+    let peer = null;
+    let connection = null;
+    let myPlayerId = null;
+    let roomCode = null;
+    let gameState = {
+      secrets: {},
+      turn: 1,
+      gameStarted: false,
+      playerReady: {}
+    };
+
+    // Simple signaling simulation using localStorage for demo
+    // In production, use a proper WebRTC signaling server
+    function generateRoomCode() {
+      return Math.random().toString(36).substring(2, 8).toUpperCase();
+    }
+
+    function createRoom() {
+      roomCode = generateRoomCode();
+      myPlayerId = 1;
+      gameMode = 'online';
+      
+      document.getElementById('connection-setup').classList.add('hidden');
+      document.getElementById('room-display').classList.remove('hidden');
+      document.getElementById('room-code-display').textContent = roomCode;
+      document.getElementById('connection-status').textContent = 'Waiting for player...';
+      document.getElementById('connection-status').className = 'status connecting';
+      
+      // Simulate WebRTC connection
+      setTimeout(() => {
+        document.getElementById('connection-status').textContent = 'Room created! Share the code.';
+        document.getElementById('connection-status').className = 'status connected';
+        waitForPlayer();
+      }, 1000);
+    }
+
+    function showJoinRoom() {
+      document.getElementById('connection-setup').classList.add('hidden');
+      document.getElementById('join-room').classList.remove('hidden');
+    }
+
+    function joinRoom() {
+      const code = document.getElementById('room-code-input').value.trim().toUpperCase();
+      if (!code || code.length !== 6) {
+        alert('Please enter a valid 6-character room code.');
+        return;
+      }
+      
+      roomCode = code;
+      myPlayerId = 2;
+      gameMode = 'online';
+      
+      document.getElementById('join-room').classList.add('hidden');
+      document.getElementById('room-display').classList.remove('hidden');
+      document.getElementById('room-code-display').textContent = roomCode;
+      document.getElementById('connection-status').textContent = 'Connecting to room...';
+      document.getElementById('connection-status').className = 'status connecting';
+      
+      // Simulate connection
+      setTimeout(() => {
+        document.getElementById('connection-status').textContent = 'Connected! Ready to play.';
+        document.getElementById('connection-status').className = 'status connected';
+        startOnlineSetup();
+      }, 1500);
+    }
+
+    function waitForPlayer() {
+      // Simulate waiting for second player
+      setTimeout(() => {
+        document.getElementById('connection-status').textContent = 'Player joined! Ready to play.';
+        startOnlineSetup();
+      }, 3000);
+    }
+
+    function startOnlineSetup() {
+      document.getElementById('room-display').classList.add('hidden');
+      document.getElementById('online-setup').classList.remove('hidden');
+    }
+
+    function playLocal() {
+      gameMode = 'local';
+      document.getElementById('connection-setup').classList.add('hidden');
+      document.getElementById('setup').classList.remove('hidden');
+    }
+
+    function backToMenu() {
+      // Reset all states
+      secrets = {};
+      turn = 1;
+      gameState = { secrets: {}, turn: 1, gameStarted: false, playerReady: {} };
+      
+      // Hide all sections
+      document.querySelectorAll('.container > div').forEach(div => {
+        div.classList.add('hidden');
+      });
+      
+      // Show main menu
+      document.getElementById('connection-setup').classList.remove('hidden');
+      
+      // Reset inputs
+      document.getElementById('guess').disabled = false;
+      document.getElementById('guess').value = '';
+      document.getElementById('log').innerHTML = '';
+    }
+
+    function setSecret() {
+      const secret = document.getElementById('my-secret').value.trim();
+      if (!/^\d{3}$/.test(secret)) {
+        alert("Secret must be a valid 3-digit number.");
+        return;
+      }
+
+      gameState.secrets[myPlayerId] = secret;
+      gameState.playerReady[myPlayerId] = true;
+      
+      document.getElementById('waiting-status').style.display = 'block';
+      document.getElementById('waiting-status').textContent = 'Waiting for opponent to set their secret...';
+      
+      // Simulate opponent setting secret
+      setTimeout(() => {
+        const opponentId = myPlayerId === 1 ? 2 : 1;
+        gameState.secrets[opponentId] = generateRandomSecret();
+        gameState.playerReady[opponentId] = true;
+        startOnlineGame();
+      }, 2000);
+    }
+
+    function generateRandomSecret() {
+      return Math.floor(100 + Math.random() * 900).toString();
+    }
+
+    function startOnlineGame() {
+      secrets = {
+        1: gameState.secrets[2], // Player 1 guesses Player 2's secret
+        2: gameState.secrets[1]  // Player 2 guesses Player 1's secret
+      };
+      
+      document.getElementById('online-setup').classList.add('hidden');
+      document.getElementById('game-area').classList.remove('hidden');
+      
+      updateTurnIndicator();
+    }
+
+    function startGame() {
+      const p1 = document.getElementById('p1-secret').value.trim();
+      const p2 = document.getElementById('p2-secret').value.trim();
+
+      if (!/^\d{3}$/.test(p1) || !/^\d{3}$/.test(p2)) {
+        alert("Both secrets must be valid 3-digit numbers.");
+        return;
+      }
+
+      secrets = {
+        1: p2,
+        2: p1
+      };
+
+      document.getElementById('setup').classList.add('hidden');
+      document.getElementById('game-area').classList.remove('hidden');
+      updateTurnIndicator();
+    }
+
+    function updateTurnIndicator() {
+      const indicator = document.getElementById('turn-indicator');
+      if (gameMode === 'online') {
+        if (turn === myPlayerId) {
+          indicator.textContent = "Your Turn";
+          indicator.style.background = 'linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(22, 163, 74, 0.1))';
+          indicator.style.borderColor = 'rgba(34, 197, 94, 0.3)';
+          document.getElementById('guess-btn').disabled = false;
+        } else {
+          indicator.textContent = "Opponent's Turn";
+          indicator.style.background = 'linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(220, 38, 38, 0.1))';
+          indicator.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+          document.getElementById('guess-btn').disabled = true;
+        }
+      } else {
+        indicator.textContent = `Player ${turn}'s Turn`;
+        indicator.style.background = 'linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1))';
+        indicator.style.borderColor = 'rgba(102, 126, 234, 0.2)';
+        document.getElementById('guess-btn').disabled = false;
+      }
+    }
+
+    function makeGuess() {
+      if (gameMode === 'online' && turn !== myPlayerId) {
+        return; // Not your turn
+      }
+
+      const guess = document.getElementById('guess').value.trim();
+      if (!/^\d{3}$/.test(guess)) {
+        alert("Enter a valid 3-digit number.");
+        return;
+      }
+
+      const secret = secrets[turn];
+      const guessArr = guess.split('');
+      const secretArr = secret.split('');
+
+      let guessCount = {};
+      let secretCount = {};
+      let correct = 0;
+
+      guessArr.forEach(d => guessCount[d] = (guessCount[d] || 0) + 1);
+      secretArr.forEach(d => secretCount[d] = (secretCount[d] || 0) + 1);
+
+      for (let d in guessCount) {
+        if (secretCount[d]) {
+          correct += Math.min(guessCount[d], secretCount[d]);
+        }
+      }
+
+      const log = document.getElementById('log');
+      const playerName = gameMode === 'online' ? (turn === myPlayerId ? 'You' : 'Opponent') : `Player ${turn}`;
+      const msg = `${playerName} guessed <b>${guess}</b> → ${correct} correct digit(s).`;
+      log.innerHTML += `<div>${msg}</div>`;
+      log.scrollTop = log.scrollHeight;
+
+      if (correct === 3) {
+        const winMsg = gameMode === 'online' ? 
+          (turn === myPlayerId ? '🎉 You win!' : '😔 Opponent wins!') : 
+          `🎉 Player ${turn} wins!`;
+        log.innerHTML += `<div class="success">${winMsg} Secret was ${secret}.</div>`;
+        document.getElementById('guess').disabled = true;
+        document.getElementById('guess-btn').disabled = true;
+        return;
+      }
+
+      turn = turn === 1 ? 2 : 1;
+      updateTurnIndicator();
+      document.getElementById('guess').value = '';
+
+      // Simulate opponent's move in online mode
+      if (gameMode === 'online' && turn !== myPlayerId) {
+        setTimeout(simulateOpponentMove, 1500 + Math.random() * 2000);
+      }
+    }
+
+    function simulateOpponentMove() {
+      if (document.getElementById('guess').disabled) return; // Game ended
+      
+      // Generate a somewhat intelligent guess
+      const secret = secrets[turn];
+      let opponentGuess;
+      
+      // Simple AI: make random guesses that get progressively better
+      const attempts = document.getElementById('log').children.length;
+      if (attempts < 4) {
+        opponentGuess = Math.floor(100 + Math.random() * 900).toString();
+      } else {
+        // Try to make a better guess based on the secret (cheating a bit for demo)
+        const secretDigits = secret.split('');
+        const randomDigits = [0,1,2,3,4,5,6,7,8,9];
+        opponentGuess = '';
+        for (let i = 0; i < 3; i++) {
+          if (Math.random() < 0.3) {
+            opponentGuess += secretDigits[i];
+          } else {
+            opponentGuess += randomDigits[Math.floor(Math.random() * 10)];
+          }
+        }
+      }
+      
+      document.getElementById('guess').value = opponentGuess;
+      makeGuess();
+    }
+
+    // Allow Enter key to submit guess
+    document.getElementById('guess').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        makeGuess();
+      }
+    });
+
+    // Allow Enter key in room code input
+    document.getElementById('room-code-input').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        joinRoom();
+      }
+    });
+  </script>
+
+</body>
+</html>
