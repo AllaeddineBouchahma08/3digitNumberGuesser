@@ -185,6 +185,52 @@
       border: 2px solid rgba(102, 126, 234, 0.2);
     }
 
+    .play-again-section {
+      text-align: center;
+      padding: 1.5rem;
+      background: rgba(102, 126, 234, 0.05);
+      border-radius: 15px;
+      margin: 1rem 0;
+      border: 2px solid rgba(102, 126, 234, 0.1);
+    }
+
+    .play-again-waiting {
+      background: rgba(251, 191, 36, 0.05);
+      border-color: rgba(251, 191, 36, 0.2);
+    }
+
+    .play-again-ready {
+      background: rgba(34, 197, 94, 0.05);
+      border-color: rgba(34, 197, 94, 0.2);
+    }
+
+    .play-again-title {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .play-again-status {
+      font-size: 1rem;
+      margin-bottom: 1rem;
+      padding: 0.5rem;
+      border-radius: 8px;
+    }
+
+    .status-waiting {
+      color: #f59e0b;
+      background: rgba(251, 191, 36, 0.1);
+    }
+
+    .status-ready {
+      color: #22c55e;
+      background: rgba(34, 197, 94, 0.1);
+    }
+
     @media (max-width: 600px) {
       .container {
         padding: 1.5rem;
@@ -249,7 +295,16 @@
       <div class="turn-indicator" id="turn-indicator">Player 1's Turn</div>
       <input type="text" id="guess" placeholder="Enter your 3-digit guess" maxlength="3">
       <button onclick="makeGuess()" id="guess-btn">Make Guess</button>
-      <button onclick="backToMenu()" id="game-back-btn">New Game</button>
+      
+      <!-- Play Again Section -->
+      <div id="play-again-section" class="play-again-section hidden">
+        <div class="play-again-title">🎮 Game Over!</div>
+        <div id="play-again-status" class="play-again-status">Ready to play again?</div>
+        <div class="button-group" style="flex-direction: column; gap: 0.5rem;">
+          <button onclick="requestPlayAgain()" id="play-again-btn">Play Again</button>
+          <button onclick="backToMenu()" id="game-back-btn">Back to Menu</button>
+        </div>
+      </div>
 
       <div class="log" id="log"></div>
     </div>
@@ -266,6 +321,7 @@
     let roomCode = null;
     let isConnected = false;
     let opponentReady = false;
+    let bothPlayersConnected = false;
     let gameState = {
       secrets: {},
       turn: 1,
@@ -274,41 +330,65 @@
       logs: []
     };
 
+    let playAgainRequested = false;
+    let opponentPlayAgainRequested = false;
+
     // Message types for communication
     const MSG_TYPES = {
       SECRET_SET: 'secret_set',
       GUESS_MADE: 'guess_made',
       GAME_START: 'game_start',
       PLAYER_READY: 'player_ready',
-      TURN_CHANGE: 'turn_change'
+      PLAYER_JOINED: 'player_joined',
+      TURN_CHANGE: 'turn_change',
+      PLAY_AGAIN_REQUEST: 'play_again_request',
+      PLAY_AGAIN_ACCEPTED: 'play_again_accepted'
     };
 
-    // Simple signaling simulation using localStorage for demo
-    // In production, use a proper WebRTC signaling server
+    // Simple signaling simulation using localStorage for cross-tab communication
     function generateRoomCode() {
       return Math.random().toString(36).substring(2, 8).toUpperCase();
     }
 
     function sendMessage(type, data) {
-      if (gameMode === 'online' && isConnected) {
-        // Simulate sending message to opponent
-        const message = { type, data, playerId: myPlayerId };
+      if (gameMode === 'online') {
+        const message = { 
+          type, 
+          data, 
+          playerId: myPlayerId,
+          roomCode: roomCode,
+          timestamp: Date.now()
+        };
+        
         console.log('Sending message:', message);
         
-        // Simulate network delay and process message
-        setTimeout(() => {
-          receiveMessage(message);
-        }, 100 + Math.random() * 200);
+        // Use localStorage to simulate real-time communication between tabs/windows
+        localStorage.setItem(`game_message_${roomCode}`, JSON.stringify(message));
+        
+        // Remove the setTimeout that was causing duplicate messages
+        // Only real cross-tab communication through localStorage storage event
       }
     }
 
-    function receiveMessage(message) {
+    function handleIncomingMessage(message) {
       if (message.playerId === myPlayerId) return; // Don't process own messages
+      if (message.roomCode !== roomCode) return; // Different room
       
       console.log('Received message:', message);
       
       switch (message.type) {
+        case MSG_TYPES.PLAYER_JOINED:
+          if (!bothPlayersConnected) {
+            bothPlayersConnected = true;
+            document.getElementById('connection-status').textContent = 'Player joined! Ready to play.';
+            document.getElementById('connection-status').className = 'status connected';
+            startOnlineSetup();
+          }
+          break;
+          
         case MSG_TYPES.SECRET_SET:
+          // Store opponent's secret properly
+          gameState.secrets[message.data.playerId] = message.data.secret;
           opponentReady = true;
           if (gameState.playerReady[myPlayerId]) {
             startOnlineGame();
@@ -316,37 +396,87 @@
           break;
           
         case MSG_TYPES.GUESS_MADE:
+          // Add opponent's guess to our log
           addLogEntry(message.data.playerName, message.data.guess, message.data.correct, message.data.secret, message.data.isWin);
+          
           if (!message.data.isWin) {
-            turn = myPlayerId; // It's now my turn
+            // Switch to my turn
+            turn = myPlayerId;
+            gameState.turn = turn;
+            updateTurnIndicator();
+          } else {
+            // Game ended, show play again section
+            showPlayAgainSection();
+          }
+          break;
+          
+        case MSG_TYPES.GAME_START:
+          // Sync game state with opponent
+          if (!gameState.gameStarted) {
+            secrets = message.data.secrets;
+            turn = message.data.turn;
+            gameState.turn = turn;
+            gameState.gameStarted = true;
+            
+            document.getElementById('online-setup').classList.add('hidden');
+            document.getElementById('game-area').classList.remove('hidden');
+            document.getElementById('log').innerHTML = '';
             updateTurnIndicator();
           }
           break;
           
-        case MSG_TYPES.PLAYER_READY:
-          opponentReady = true;
+        case MSG_TYPES.PLAY_AGAIN_REQUEST:
+          // Opponent requested to play again
+          opponentPlayAgainRequested = true;
+          updatePlayAgainStatus();
+          
+          if (playAgainRequested) {
+            // Both players want to play again
+            startPlayAgain();
+          }
+          break;
+          
+        case MSG_TYPES.PLAY_AGAIN_ACCEPTED:
+          // Both players agreed, start new game
+          startPlayAgain();
           break;
       }
     }
+
+    // Listen for localStorage changes (cross-tab communication)
+    window.addEventListener('storage', function(e) {
+      if (e.key && e.key.startsWith('game_message_') && e.newValue) {
+        try {
+          const message = JSON.parse(e.newValue);
+          handleIncomingMessage(message);
+        } catch (err) {
+          console.error('Error parsing message:', err);
+        }
+      }
+    });
 
     function createRoom() {
       roomCode = generateRoomCode();
       myPlayerId = 1;
       gameMode = 'online';
-      isConnected = false;
+      isConnected = true;
+      bothPlayersConnected = false;
       
       document.getElementById('connection-setup').classList.add('hidden');
       document.getElementById('room-display').classList.remove('hidden');
       document.getElementById('room-code-display').textContent = roomCode;
-      document.getElementById('connection-status').textContent = 'Waiting for player...';
+      document.getElementById('connection-status').textContent = 'Waiting for player to join...';
       document.getElementById('connection-status').className = 'status connecting';
       
-      // Simulate WebRTC connection
-      setTimeout(() => {
-        document.getElementById('connection-status').textContent = 'Room created! Share the code.';
-        document.getElementById('connection-status').className = 'status connected';
-        waitForPlayer();
-      }, 1000);
+      // Store room info in localStorage
+      localStorage.setItem(`room_${roomCode}`, JSON.stringify({
+        host: myPlayerId,
+        created: Date.now(),
+        players: [myPlayerId]
+      }));
+      
+      // Don't auto-proceed, wait for actual player to join
+      console.log('Room created, waiting for player 2...');
     }
 
     function showJoinRoom() {
@@ -361,10 +491,18 @@
         return;
       }
       
+      // Check if room exists
+      const roomData = localStorage.getItem(`room_${code}`);
+      if (!roomData) {
+        alert('Room not found. Please check the code and try again.');
+        return;
+      }
+      
       roomCode = code;
       myPlayerId = 2;
       gameMode = 'online';
-      isConnected = false;
+      isConnected = true;
+      bothPlayersConnected = true;
       
       document.getElementById('join-room').classList.add('hidden');
       document.getElementById('room-display').classList.remove('hidden');
@@ -372,22 +510,23 @@
       document.getElementById('connection-status').textContent = 'Connecting to room...';
       document.getElementById('connection-status').className = 'status connecting';
       
-      // Simulate connection
+      // Update room data
+      try {
+        const room = JSON.parse(roomData);
+        room.players.push(myPlayerId);
+        localStorage.setItem(`room_${roomCode}`, JSON.stringify(room));
+      } catch (e) {
+        console.error('Error updating room data:', e);
+      }
+      
+      // Notify host that player joined
+      sendMessage(MSG_TYPES.PLAYER_JOINED, { playerId: myPlayerId });
+      
       setTimeout(() => {
         document.getElementById('connection-status').textContent = 'Connected! Ready to play.';
         document.getElementById('connection-status').className = 'status connected';
-        isConnected = true;
         startOnlineSetup();
-      }, 1500);
-    }
-
-    function waitForPlayer() {
-      // Simulate waiting for second player
-      setTimeout(() => {
-        document.getElementById('connection-status').textContent = 'Player joined! Ready to play.';
-        isConnected = true;
-        startOnlineSetup();
-      }, 3000);
+      }, 1000);
     }
 
     function startOnlineSetup() {
@@ -402,11 +541,17 @@
     }
 
     function backToMenu() {
+      // Clean up room data if we created it
+      if (roomCode && myPlayerId === 1) {
+        localStorage.removeItem(`room_${roomCode}`);
+      }
+      
       // Reset all states
       secrets = {};
       turn = 1;
       isConnected = false;
       opponentReady = false;
+      bothPlayersConnected = false;
       gameState = { secrets: {}, turn: 1, gameStarted: false, playerReady: {}, logs: [] };
       
       // Hide all sections
@@ -421,6 +566,8 @@
       document.getElementById('guess').disabled = false;
       document.getElementById('guess').value = '';
       document.getElementById('log').innerHTML = '';
+      document.getElementById('room-code-input').value = '';
+      document.getElementById('my-secret').value = '';
     }
 
     function setSecret() {
@@ -436,18 +583,15 @@
       document.getElementById('waiting-status').style.display = 'block';
       document.getElementById('waiting-status').textContent = 'Waiting for opponent to set their secret...';
       
-      // Send message to opponent
-      sendMessage(MSG_TYPES.SECRET_SET, { playerId: myPlayerId });
+      // Send secret to opponent (include the actual secret)
+      sendMessage(MSG_TYPES.SECRET_SET, { 
+        playerId: myPlayerId, 
+        secret: secret,
+        ready: true 
+      });
       
-      // Simulate opponent setting secret (for demo purposes)
-      if (!opponentReady) {
-        setTimeout(() => {
-          const opponentId = myPlayerId === 1 ? 2 : 1;
-          gameState.secrets[opponentId] = generateRandomSecret();
-          opponentReady = true;
-          startOnlineGame();
-        }, 2000);
-      } else {
+      // If opponent is already ready, start game
+      if (opponentReady) {
         startOnlineGame();
       }
     }
@@ -461,10 +605,10 @@
         return; // Wait for both players to be ready
       }
       
-      // Ensure we have both secrets
+      // Ensure both secrets are set
       const opponentId = myPlayerId === 1 ? 2 : 1;
       if (!gameState.secrets[opponentId]) {
-        gameState.secrets[opponentId] = generateRandomSecret();
+        return; // Wait for opponent's secret
       }
       
       secrets = {
@@ -475,6 +619,7 @@
       // Player 1 always starts
       turn = 1;
       gameState.turn = 1;
+      gameState.gameStarted = true;
       
       document.getElementById('online-setup').classList.add('hidden');
       document.getElementById('game-area').classList.remove('hidden');
@@ -484,8 +629,12 @@
       
       updateTurnIndicator();
       
-      // Send game start message
-      sendMessage(MSG_TYPES.GAME_START, { turn: turn });
+      // Send game start message with secrets
+      sendMessage(MSG_TYPES.GAME_START, { 
+        turn: turn, 
+        gameStarted: true,
+        secrets: secrets
+      });
     }
 
     function startGame() {
@@ -536,7 +685,7 @@
 
     function addLogEntry(playerName, guess, correct, secret, isWin) {
       const log = document.getElementById('log');
-      const msg = `${playerName} guessed <b>${guess}</b> → ${correct} correct digit(s).`;
+      const msg = `${playerName} guessed <b>${guess}</b> → ${correct} correct number(s).`;
       log.innerHTML += `<div>${msg}</div>`;
       
       if (isWin) {
@@ -545,6 +694,101 @@
       }
       
       log.scrollTop = log.scrollHeight;
+    }
+
+    function showPlayAgainSection() {
+      document.getElementById('guess').disabled = true;
+      document.getElementById('guess-btn').disabled = true;
+      document.getElementById('play-again-section').classList.remove('hidden');
+      
+      // Reset play again states
+      playAgainRequested = false;
+      opponentPlayAgainRequested = false;
+      updatePlayAgainStatus();
+    }
+
+    function requestPlayAgain() {
+      playAgainRequested = true;
+      document.getElementById('play-again-btn').disabled = true;
+      
+      if (gameMode === 'online') {
+        // Send play again request to opponent
+        sendMessage(MSG_TYPES.PLAY_AGAIN_REQUEST, { playerId: myPlayerId });
+        
+        if (opponentPlayAgainRequested) {
+          // Both players want to play again
+          sendMessage(MSG_TYPES.PLAY_AGAIN_ACCEPTED, { playerId: myPlayerId });
+          startPlayAgain();
+        } else {
+          updatePlayAgainStatus();
+        }
+      } else {
+        // Local game restart
+        startPlayAgain();
+      }
+    }
+
+    function updatePlayAgainStatus() {
+      const statusDiv = document.getElementById('play-again-status');
+      const sectionDiv = document.getElementById('play-again-section');
+      
+      if (gameMode === 'local') {
+        statusDiv.textContent = 'Ready to play again?';
+        statusDiv.className = 'play-again-status';
+        sectionDiv.className = 'play-again-section';
+      } else if (playAgainRequested && opponentPlayAgainRequested) {
+        statusDiv.textContent = '🎉 Both players ready! Starting new game...';
+        statusDiv.className = 'play-again-status status-ready';
+        sectionDiv.className = 'play-again-section play-again-ready';
+      } else if (playAgainRequested) {
+        statusDiv.textContent = '⏳ Waiting for opponent to accept...';
+        statusDiv.className = 'play-again-status status-waiting';
+        sectionDiv.className = 'play-again-section play-again-waiting';
+      } else if (opponentPlayAgainRequested) {
+        statusDiv.textContent = '🔔 Opponent wants to play again!';
+        statusDiv.className = 'play-again-status status-ready';
+        sectionDiv.className = 'play-again-section play-again-ready';
+      } else {
+        statusDiv.textContent = 'Ready to play again?';
+        statusDiv.className = 'play-again-status';
+        sectionDiv.className = 'play-again-section';
+      }
+    }
+
+    function startPlayAgain() {
+      // Reset game state but keep connection info
+      resetGameForPlayAgain();
+      
+      if (gameMode === 'online') {
+        startOnlineSetup();
+      } else {
+        document.getElementById('game-area').classList.add('hidden');
+        document.getElementById('setup').classList.remove('hidden');
+      }
+    }
+
+    function resetGameForPlayAgain() {
+      // Reset game state but keep connection info
+      secrets = {};
+      turn = 1;
+      opponentReady = false;
+      playAgainRequested = false;
+      opponentPlayAgainRequested = false;
+      gameState.secrets = {};
+      gameState.turn = 1;
+      gameState.gameStarted = false;
+      gameState.playerReady = {};
+      gameState.logs = [];
+      
+      // Reset UI elements
+      document.getElementById('guess').disabled = false;
+      document.getElementById('guess-btn').disabled = false;
+      document.getElementById('guess').value = '';
+      document.getElementById('log').innerHTML = '';
+      document.getElementById('my-secret').value = '';
+      document.getElementById('play-again-section').classList.add('hidden');
+      document.getElementById('play-again-btn').disabled = false;
+      document.getElementById('waiting-status').style.display = 'none';
     }
 
     function makeGuess() {
@@ -566,9 +810,12 @@
       let secretCount = {};
       let correct = 0;
 
+      // Count occurrences of each digit in both guess and secret
       guessArr.forEach(d => guessCount[d] = (guessCount[d] || 0) + 1);
       secretArr.forEach(d => secretCount[d] = (secretCount[d] || 0) + 1);
 
+      // Count correct numbers - use minimum count between guess and secret for each digit
+      // This ensures if secret has "111" and guess has "011", only 1 is counted (min of 1 and 3)
       for (let d in guessCount) {
         if (secretCount[d]) {
           correct += Math.min(guessCount[d], secretCount[d]);
@@ -576,14 +823,13 @@
       }
 
       const playerName = gameMode === 'online' ? 'You' : `Player ${turn}`;
-      const isWin = correct === 3;
+      const isWin = guess === secret; // Win only if exact match
       
       // Add to local log
       addLogEntry(playerName, guess, correct, secret, isWin);
 
       if (isWin) {
-        document.getElementById('guess').disabled = true;
-        document.getElementById('guess-btn').disabled = true;
+        showPlayAgainSection();
         
         // Send win message to opponent
         if (gameMode === 'online') {
@@ -598,12 +844,7 @@
         return;
       }
 
-      // Switch turns
-      const oldTurn = turn;
-      turn = turn === 1 ? 2 : 1;
-      gameState.turn = turn;
-      
-      // Send guess info to opponent
+      // Send guess info to opponent BEFORE switching turns
       if (gameMode === 'online') {
         sendMessage(MSG_TYPES.GUESS_MADE, {
           playerName: 'Opponent',
@@ -612,76 +853,24 @@
           secret: secret,
           isWin: false
         });
-      }
-      
-      updateTurnIndicator();
-      document.getElementById('guess').value = '';
-
-      // Simulate opponent's move in online mode (for demo)
-      if (gameMode === 'online' && turn !== myPlayerId) {
-        setTimeout(simulateOpponentMove, 1500 + Math.random() * 2000);
-      }
-    }
-
-    function simulateOpponentMove() {
-      if (document.getElementById('guess').disabled) return; // Game ended
-      if (turn === myPlayerId) return; // It's actually my turn now
-      
-      // Generate a somewhat intelligent guess
-      const secret = secrets[turn];
-      let opponentGuess;
-      
-      // Simple AI: make random guesses that get progressively better
-      const attempts = document.getElementById('log').children.length;
-      if (attempts < 4) {
-        opponentGuess = Math.floor(100 + Math.random() * 900).toString();
-      } else {
-        // Try to make a better guess based on the secret (cheating a bit for demo)
-        const secretDigits = secret.split('');
-        const randomDigits = [0,1,2,3,4,5,6,7,8,9];
-        opponentGuess = '';
-        for (let i = 0; i < 3; i++) {
-          if (Math.random() < 0.3) {
-            opponentGuess += secretDigits[i];
-          } else {
-            opponentGuess += randomDigits[Math.floor(Math.random() * 10)];
-          }
-        }
-      }
-      
-      // Simulate opponent making the guess
-      const opponentSecret = secrets[turn];
-      const guessArr = opponentGuess.split('');
-      const secretArr = opponentSecret.split('');
-
-      let guessCount = {};
-      let secretCount = {};
-      let correct = 0;
-
-      guessArr.forEach(d => guessCount[d] = (guessCount[d] || 0) + 1);
-      secretArr.forEach(d => secretCount[d] = (secretCount[d] || 0) + 1);
-
-      for (let d in guessCount) {
-        if (secretCount[d]) {
-          correct += Math.min(guessCount[d], secretCount[d]);
-        }
-      }
-
-      const isWin = correct === 3;
-      
-      // Add opponent's guess to log
-      addLogEntry('Opponent', opponentGuess, correct, secret, isWin);
-
-      if (isWin) {
-        document.getElementById('guess').disabled = true;
+        
+        // In online mode, disable inputs until opponent plays
         document.getElementById('guess-btn').disabled = true;
-        return;
+        document.getElementById('guess').disabled = true;
+        
+        // Update turn indicator to show "Waiting for opponent"
+        const indicator = document.getElementById('turn-indicator');
+        indicator.textContent = "Waiting for opponent...";
+        indicator.style.background = 'linear-gradient(135deg, rgba(251, 191, 36, 0.1), rgba(245, 158, 11, 0.1))';
+        indicator.style.borderColor = 'rgba(251, 191, 36, 0.3)';
+        
+      } else {
+        // Switch turns only in local mode
+        turn = turn === 1 ? 2 : 1;
+        updateTurnIndicator();
       }
-
-      // Switch back to my turn
-      turn = myPlayerId;
-      gameState.turn = turn;
-      updateTurnIndicator();
+      
+      document.getElementById('guess').value = '';
     }
 
     // Allow Enter key to submit guess
@@ -695,6 +884,20 @@
     document.getElementById('room-code-input').addEventListener('keypress', function(e) {
       if (e.key === 'Enter') {
         joinRoom();
+      }
+    });
+
+    // Allow Enter key in secret input
+    document.getElementById('my-secret').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        setSecret();
+      }
+    });
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', function() {
+      if (roomCode && myPlayerId === 1) {
+        localStorage.removeItem(`room_${roomCode}`);
       }
     });
   </script>
